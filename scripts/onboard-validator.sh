@@ -3,6 +3,7 @@ set -euo pipefail
 
 IMAGE="${IMAGE:-ghcr.io/nodesolutionsai/salvorias-validator-node:latest}"
 IMAGE_TARBALL_URL="${IMAGE_TARBALL_URL:-https://github.com/NodeSolutionsAI/salvorias-validator-node/releases/latest/download/salvorias-validator-node-latest.tar.gz}"
+DOCKER_PLATFORM="${DOCKER_PLATFORM:-linux/amd64}"
 CONTAINER_NAME="${CONTAINER_NAME:-salvorias-validator}"
 VOLUME_NAME="${VOLUME_NAME:-salvorias-validator-data}"
 KEY_NAME="${KEY_NAME:-validator}"
@@ -12,6 +13,13 @@ DENOM="${DENOM:-SAVDR}"
 STATE_SYNC_RPC="${STATE_SYNC_RPC:-http://134.199.216.166:26660}"
 PERSISTENT_PEERS="${PERSISTENT_PEERS:-bc9decb51c24982322c756b7c9a0c837ed7a7216@134.199.216.166:26656,7883bda6e4de7db2b7056ead781a0a6383bd31c8@45.32.168.97:26656,a98ef2a79329ebdd7fee7d546ec284b64e7306fb@64.23.236.42:26656}"
 HOME_DIR="/home/evmos/.evmosd"
+HOST_P2P_PORT="${HOST_P2P_PORT:-26656}"
+HOST_RPC_PORT="${HOST_RPC_PORT:-26657}"
+HOST_API_PORT="${HOST_API_PORT:-1317}"
+HOST_EVM_RPC_PORT="${HOST_EVM_RPC_PORT:-8545}"
+HOST_EVM_WS_PORT="${HOST_EVM_WS_PORT:-8546}"
+HOST_GRPC_PORT="${HOST_GRPC_PORT:-9090}"
+HOST_LOCAL_BIND="${HOST_LOCAL_BIND:-127.0.0.1}"
 MONIKER=""
 EXTERNAL_IP=""
 MNEMONIC=""
@@ -153,6 +161,7 @@ cleanup() {
 trap cleanup EXIT
 
 docker run -d --name "$SETUP_CONTAINER" \
+  --platform "$DOCKER_PLATFORM" \
   -v "$VOLUME_NAME:$HOME_DIR" \
   --entrypoint sleep \
   "$IMAGE" infinity >/dev/null
@@ -237,13 +246,14 @@ trap - EXIT
 docker run -d \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
+  --platform "$DOCKER_PLATFORM" \
   -v "$VOLUME_NAME:$HOME_DIR" \
-  -p 26656:26656 \
-  -p 127.0.0.1:26657:26657 \
-  -p 127.0.0.1:1317:1317 \
-  -p 127.0.0.1:8545:8545 \
-  -p 127.0.0.1:8546:8546 \
-  -p 127.0.0.1:9090:9090 \
+  -p "$HOST_P2P_PORT:26656" \
+  -p "$HOST_LOCAL_BIND:$HOST_RPC_PORT:26657" \
+  -p "$HOST_LOCAL_BIND:$HOST_API_PORT:1317" \
+  -p "$HOST_LOCAL_BIND:$HOST_EVM_RPC_PORT:8545" \
+  -p "$HOST_LOCAL_BIND:$HOST_EVM_WS_PORT:8546" \
+  -p "$HOST_LOCAL_BIND:$HOST_GRPC_PORT:9090" \
   "$IMAGE" evmosd start --home "$HOME_DIR" >/dev/null
 
 sleep 5

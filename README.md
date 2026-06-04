@@ -117,3 +117,23 @@ For maintainers:
 ```
 
 This tags the local production image as `ghcr.io/nodesolutionsai/salvorias-validator-node:latest` and pushes it to GitHub Container Registry.
+
+## Local Smoke Test With Alternate Ports
+
+If another local validator or explorer stack is already using the default ports, override the host-side ports:
+
+```bash
+CONTAINER_NAME=salvorias-validator-smoke \
+VOLUME_NAME=salvorias-validator-smoke-data \
+HOST_P2P_PORT=27656 \
+HOST_RPC_PORT=27657 \
+HOST_API_PORT=11317 \
+HOST_EVM_RPC_PORT=18545 \
+HOST_EVM_WS_PORT=18546 \
+HOST_GRPC_PORT=19090 \
+./scripts/onboard-validator.sh \
+  --moniker "LocalSmoke" \
+  --external-ip "127.0.0.1" \
+  --mnemonic "test test test test test test test test test test test junk" \
+  --force
+```
