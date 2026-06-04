@@ -30,10 +30,12 @@ chmod +x scripts/*.sh
 
 ./scripts/onboard-validator.sh \
   --moniker "SaveMarket" \
-  --external-ip "YOUR_SERVER_PUBLIC_IP"
+  --external-ip "YOUR_SERVER_PUBLIC_IP" \
+  --force
 ```
 
 Run the onboarding command as `root` or with `sudo` on a fresh server so it can install Docker when needed.
+Use `--force` when rerunning onboarding after a failed or partial attempt; it replaces the existing container while reusing the validator data volume.
 
 During onboarding, paste the validator mnemonic when prompted. If you press enter without a mnemonic, the script will create a new validator key and print the mnemonic once.
 
