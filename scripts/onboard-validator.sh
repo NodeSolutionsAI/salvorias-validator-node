@@ -2,6 +2,7 @@
 set -euo pipefail
 
 IMAGE="${IMAGE:-ghcr.io/nodesolutionsai/salvorias-validator-node:latest}"
+IMAGE_TARBALL_URL="${IMAGE_TARBALL_URL:-https://github.com/NodeSolutionsAI/salvorias-validator-node/releases/latest/download/salvorias-validator-node-latest.tar.gz}"
 CONTAINER_NAME="${CONTAINER_NAME:-salvorias-validator}"
 VOLUME_NAME="${VOLUME_NAME:-salvorias-validator-data}"
 KEY_NAME="${KEY_NAME:-validator}"
@@ -86,7 +87,16 @@ echo " Native denom:  $DENOM"
 echo " State sync:    $STATE_SYNC_RPC"
 echo
 
-docker pull "$IMAGE"
+if ! docker pull "$IMAGE"; then
+  echo
+  echo "Docker registry pull failed for $IMAGE."
+  echo "Falling back to release image tarball:"
+  echo "  $IMAGE_TARBALL_URL"
+  TMP_IMAGE="$(mktemp -t salvorias-validator-image.XXXXXX.tar.gz)"
+  curl -fL --retry 3 --retry-delay 3 -o "$TMP_IMAGE" "$IMAGE_TARBALL_URL"
+  docker load -i "$TMP_IMAGE"
+  rm -f "$TMP_IMAGE"
+fi
 
 if docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
   if [[ "$FORCE" == "true" ]]; then
