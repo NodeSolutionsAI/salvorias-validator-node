@@ -46,16 +46,52 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-need_cmd() {
-  command -v "$1" >/dev/null 2>&1 || {
-    echo "Missing required command: $1" >&2
-    exit 1
-  }
+is_root() {
+  [[ "$(id -u)" -eq 0 ]]
 }
 
-need_cmd docker
-need_cmd curl
-need_cmd jq
+install_base_packages() {
+  if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y ca-certificates curl jq
+  else
+    echo "Missing curl/jq and this script only auto-installs packages on apt-based systems." >&2
+    echo "Install curl, jq, and Docker, then rerun this script." >&2
+    exit 1
+  fi
+}
+
+ensure_base_packages() {
+  if command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+    return
+  fi
+  if ! is_root; then
+    echo "curl/jq are missing. Rerun with sudo/root so the script can install them." >&2
+    exit 1
+  fi
+  echo "Installing required packages: curl jq"
+  install_base_packages
+}
+
+ensure_docker() {
+  if command -v docker >/dev/null 2>&1 && docker version >/dev/null 2>&1; then
+    return
+  fi
+  if ! is_root; then
+    echo "Docker is missing or not running. Rerun with sudo/root so the script can install/start Docker." >&2
+    exit 1
+  fi
+  echo "Installing Docker..."
+  curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+  sh /tmp/get-docker.sh
+  systemctl enable docker >/dev/null 2>&1 || true
+  systemctl start docker >/dev/null 2>&1 || service docker start >/dev/null 2>&1 || true
+  docker version >/dev/null
+}
+
+ensure_base_packages
+ensure_docker
 
 if [[ -z "$MONIKER" ]]; then
   read -r -p "Validator moniker: " MONIKER

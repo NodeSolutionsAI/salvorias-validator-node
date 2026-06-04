@@ -12,7 +12,7 @@ No mnemonic is committed or stored in this repo.
 
 ## Requirements
 
-- Ubuntu server with Docker installed.
+- Ubuntu/Debian server with root access. The onboarding script installs Docker, `curl`, and `jq` if they are missing.
 - Ports:
   - `26656/tcp` open publicly for P2P.
   - SSH open only to trusted operator IPs.
@@ -32,6 +32,8 @@ chmod +x scripts/*.sh
   --moniker "SaveMarket" \
   --external-ip "YOUR_SERVER_PUBLIC_IP"
 ```
+
+Run the onboarding command as `root` or with `sudo` on a fresh server so it can install Docker when needed.
 
 During onboarding, paste the validator mnemonic when prompted. If you press enter without a mnemonic, the script will create a new validator key and print the mnemonic once.
 
