@@ -177,8 +177,8 @@ docker exec "$SETUP_CONTAINER" sh -lc "
   rm -rf '$HOME_DIR/config' '$HOME_DIR/data'
   evmosd init '$MONIKER' --chain-id '$CHAIN_ID' --home '$HOME_DIR' >/dev/null
   cp /tmp/genesis.json '$HOME_DIR/config/genesis.json'
-  evmosd config chain-id '$CHAIN_ID' --home '$HOME_DIR'
-  evmosd config keyring-backend test --home '$HOME_DIR'
+  evmosd config set client chain-id '$CHAIN_ID' --home '$HOME_DIR' >/dev/null 2>&1 || true
+  evmosd config set client keyring-backend test --home '$HOME_DIR' >/dev/null 2>&1 || true
 "
 
 if [[ -z "$MNEMONIC" ]]; then
@@ -254,9 +254,36 @@ docker run -d \
   -p "$HOST_LOCAL_BIND:$HOST_EVM_RPC_PORT:8545" \
   -p "$HOST_LOCAL_BIND:$HOST_EVM_WS_PORT:8546" \
   -p "$HOST_LOCAL_BIND:$HOST_GRPC_PORT:9090" \
-  "$IMAGE" evmosd start --home "$HOME_DIR" >/dev/null
+  "$IMAGE" evmosd start \
+    --home "$HOME_DIR" \
+    --chain-id "$CHAIN_ID" \
+    --minimum-gas-prices "0${DENOM}" \
+    --rpc.laddr tcp://0.0.0.0:26657 \
+    --p2p.laddr tcp://0.0.0.0:26656 \
+    --json-rpc.enable \
+    --json-rpc.address 0.0.0.0:8545 \
+    --json-rpc.ws-address 0.0.0.0:8546 \
+    --grpc.enable \
+    --grpc.address 0.0.0.0:9090 >/dev/null
 
-sleep 5
+echo "Waiting for validator RPC..."
+for _ in $(seq 1 60); do
+  if docker exec "$CONTAINER_NAME" sh -lc "curl -fsS http://127.0.0.1:26657/status >/dev/null 2>&1"; then
+    break
+  fi
+  if ! docker ps --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
+    echo "Container stopped during startup. Recent logs:" >&2
+    docker logs --tail 120 "$CONTAINER_NAME" >&2 || true
+    exit 1
+  fi
+  sleep 2
+done
+
+if ! docker exec "$CONTAINER_NAME" sh -lc "curl -fsS http://127.0.0.1:26657/status >/dev/null 2>&1"; then
+  echo "Validator RPC did not become ready. Recent logs:" >&2
+  docker logs --tail 160 "$CONTAINER_NAME" >&2 || true
+  exit 1
+fi
 
 echo
 echo "Validator container started."
