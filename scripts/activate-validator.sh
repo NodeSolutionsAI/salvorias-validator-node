@@ -8,10 +8,11 @@ CHAIN_ID="${CHAIN_ID:-salvorias_7282-1}"
 DENOM="${DENOM:-SAVDR}"
 MONIKER=""
 SELF_DELEGATION="${SELF_DELEGATION:-1000000000000000000}"
-COMMISSION_RATE="${COMMISSION_RATE:-0.10}"
-COMMISSION_MAX_RATE="${COMMISSION_MAX_RATE:-0.20}"
+COMMISSION_RATE="${COMMISSION_RATE:-1.0}"
+COMMISSION_MAX_RATE="${COMMISSION_MAX_RATE:-1.0}"
 COMMISSION_MAX_CHANGE_RATE="${COMMISSION_MAX_CHANGE_RATE:-0.01}"
 MIN_SELF_DELEGATION="${MIN_SELF_DELEGATION:-1}"
+GAS_PRICE="${GAS_PRICE:-1000000000}"
 
 usage() {
   cat <<EOF
@@ -64,6 +65,45 @@ if [[ "$CATCHING_UP" != "false" ]]; then
   exit 1
 fi
 
+is_uint() {
+  [[ "$1" =~ ^[0-9]+$ ]]
+}
+
+decimal_lt() {
+  local left="${1#"${1%%[!0]*}"}"
+  local right="${2#"${2%%[!0]*}"}"
+  left="${left:-0}"
+  right="${right:-0}"
+
+  if (( ${#left} != ${#right} )); then
+    (( ${#left} < ${#right} ))
+    return
+  fi
+
+  [[ "$left" < "$right" ]]
+}
+
+decimal_add_small() {
+  local value="${1#"${1%%[!0]*}"}"
+  local carry="$2"
+  local result=""
+  local digit sum
+  value="${value:-0}"
+
+  while [[ -n "$value" || "$carry" -gt 0 ]]; do
+    digit=0
+    if [[ -n "$value" ]]; then
+      digit="${value: -1}"
+      value="${value:0:${#value}-1}"
+    fi
+    sum=$((digit + carry))
+    result="$((sum % 10))$result"
+    carry=$((sum / 10))
+  done
+
+  printf '%s\n' "${result:-0}"
+}
+
 ACCOUNT="$(docker exec "$CONTAINER_NAME" evmosd keys show "$KEY_NAME" --keyring-backend test --home "$HOME_DIR" --bech acc -a)"
 VALOPER="$(docker exec "$CONTAINER_NAME" evmosd keys show "$KEY_NAME" --keyring-backend test --home "$HOME_DIR" --bech val -a)"
 PUBKEY="$(docker exec "$CONTAINER_NAME" evmosd tendermint show-validator --home "$HOME_DIR")"
@@ -74,8 +114,13 @@ echo "Valoper:  $VALOPER"
 echo "Balance:  $BALANCE $DENOM"
 echo
 
-REQUIRED=$((SELF_DELEGATION + 1))
-if [[ "$BALANCE" =~ ^[0-9]+$ ]] && [[ "$BALANCE" -lt "$REQUIRED" ]]; then
+if ! is_uint "$SELF_DELEGATION"; then
+  echo "Self-delegation must be an integer base-unit amount." >&2
+  exit 1
+fi
+
+REQUIRED="$(decimal_add_small "$SELF_DELEGATION" 1)"
+if is_uint "$BALANCE" && decimal_lt "$BALANCE" "$REQUIRED"; then
   echo "Insufficient $DENOM balance for self-delegation and fees." >&2
   echo "Fund $ACCOUNT before activating." >&2
   exit 1
@@ -110,7 +155,7 @@ TX_OUT="$(docker exec "$CONTAINER_NAME" evmosd tx staking create-validator /tmp/
   --chain-id "$CHAIN_ID" \
   --node tcp://127.0.0.1:26657 \
   --gas 500000 \
-  --gas-prices "0${DENOM}" \
+  --gas-prices "${GAS_PRICE}${DENOM}" \
   --yes \
   --output json 2>&1)"
 TX_CODE=$?

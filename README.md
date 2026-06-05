@@ -75,15 +75,18 @@ After the account is funded and whitelisted:
   --moniker "SaveMarket"
 ```
 
-Default self-delegation is `1 SAVDR`. You can override it:
+Default self-delegation is `1 SAVDR`. The script uses the production-required
+validator commission rate and gas price by default. You can override
+self-delegation when you want to stake a specific amount:
 
 ```bash
 ./scripts/activate-validator.sh \
   --moniker "SaveMarket" \
-  --self-delegation 5000000000000000000
+  --self-delegation 100000000000000000000
 ```
 
-The self-delegation amount is in base units. `1000000000000000000` equals `1 SAVDR`.
+The self-delegation amount is in base units. `1000000000000000000` equals
+`1 SAVDR`; `100000000000000000000` equals `100 SAVDR`.
 
 ## Defaults
 
