@@ -11,7 +11,9 @@ CHAIN_ID="${CHAIN_ID:-salvorias_7282-1}"
 EVM_CHAIN_ID="${EVM_CHAIN_ID:-7282}"
 DENOM="${DENOM:-SAVDR}"
 STATE_SYNC_RPC="${STATE_SYNC_RPC:-http://134.199.216.166:26660}"
-PERSISTENT_PEERS="${PERSISTENT_PEERS:-bc9decb51c24982322c756b7c9a0c837ed7a7216@134.199.216.166:26656,7883bda6e4de7db2b7056ead781a0a6383bd31c8@45.32.168.97:26656,a98ef2a79329ebdd7fee7d546ec284b64e7306fb@64.23.236.42:26656}"
+PERSISTENT_PEERS="${PERSISTENT_PEERS:-bc9decb51c24982322c756b7c9a0c837ed7a7216@134.199.216.166:26656,7883bda6e4de7db2b7056ead781a0a6383bd31c8@45.32.168.97:26656,a98ef2a79329ebdd7fee7d546ec284b64e7306fb@64.23.236.42:26656,e870477adf4f8b7a35c86d9910409482a573bfbb@149.28.244.23:26656}"
+TRUST_OFFSET="${TRUST_OFFSET:-2000}"
+STATE_SYNC_DISCOVERY_TIME="${STATE_SYNC_DISCOVERY_TIME:-60s}"
 HOME_DIR="/home/evmos/.evmosd"
 HOST_P2P_PORT="${HOST_P2P_PORT:-26656}"
 HOST_RPC_PORT="${HOST_RPC_PORT:-26657}"
@@ -211,7 +213,7 @@ fi
 
 echo "Configuring state sync..."
 LATEST="$(curl -fsS "$STATE_SYNC_RPC/status" | jq -r '.result.sync_info.latest_block_height')"
-TRUST_HEIGHT=$((LATEST - 2000))
+TRUST_HEIGHT=$((LATEST - TRUST_OFFSET))
 if [[ "$TRUST_HEIGHT" -lt 1 ]]; then
   TRUST_HEIGHT=1
 fi
@@ -231,6 +233,7 @@ docker exec "$SETUP_CONTAINER" sh -lc "
   sed -i '/^\\[statesync\\]/,/^\\[/ s|^trust_height = .*|trust_height = '$TRUST_HEIGHT'|' \"\$CFG\"
   sed -i '/^\\[statesync\\]/,/^\\[/ s|^trust_hash = .*|trust_hash = \"'$TRUST_HASH'\"|' \"\$CFG\"
   sed -i '/^\\[statesync\\]/,/^\\[/ s|^trust_period = .*|trust_period = \"168h0m0s\"|' \"\$CFG\"
+  sed -i '/^\\[statesync\\]/,/^\\[/ s|^discovery_time = .*|discovery_time = \"'$STATE_SYNC_DISCOVERY_TIME'\"|' \"\$CFG\"
 
   sed -i 's|^minimum-gas-prices = .*|minimum-gas-prices = \"0'$DENOM'\"|' \"\$APP\"
   sed -i '/^\\[api\\]/,/^\\[/ s|^enable = .*|enable = true|' \"\$APP\"

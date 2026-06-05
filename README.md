@@ -53,6 +53,19 @@ The validator is ready to activate only when:
 catching_up: false
 ```
 
+If the node is stuck at block `0` with logs like `Discovering snapshots`, reset
+state sync and restart the existing container:
+
+```bash
+git pull
+chmod +x scripts/*.sh
+./scripts/reset-state-sync.sh
+docker logs -f --tail 200 salvorias-validator
+```
+
+This keeps the validator key in the Docker volume, clears only local chain data,
+and rewrites the current production state-sync peers.
+
 ## Activate Validator
 
 After the account is funded and whitelisted:
