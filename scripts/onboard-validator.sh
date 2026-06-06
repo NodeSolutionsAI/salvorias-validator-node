@@ -218,14 +218,18 @@ if [[ -n "$MNEMONIC" ]]; then
     exit 1
   fi
 else
-  echo "Creating new validator key. Save this mnemonic now; it will not be printed again."
-  docker exec "$SETUP_CONTAINER" sh -lc "
-    evmosd keys delete '$KEY_NAME' --yes --keyring-backend test --home '$HOME_DIR' >/dev/null 2>&1 || true
-    evmosd keys add '$KEY_NAME' \
-      --algo eth_secp256k1 \
-      --keyring-backend test \
-      --home '$HOME_DIR'
-  "
+  if docker exec "$SETUP_CONTAINER" evmosd keys show "$KEY_NAME" --keyring-backend test --home "$HOME_DIR" >/dev/null 2>&1; then
+    echo "Using existing validator key '$KEY_NAME' from Docker volume."
+    docker exec "$SETUP_CONTAINER" evmosd keys show "$KEY_NAME" --keyring-backend test --home "$HOME_DIR"
+  else
+    echo "Creating new validator key. Save this mnemonic now; it will not be printed again."
+    docker exec "$SETUP_CONTAINER" sh -lc "
+      evmosd keys add '$KEY_NAME' \
+        --algo eth_secp256k1 \
+        --keyring-backend test \
+        --home '$HOME_DIR'
+    "
+  fi
 fi
 
 echo "Configuring state sync..."
