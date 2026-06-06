@@ -11,7 +11,7 @@ CHAIN_ID="${CHAIN_ID:-salvorias_7282-1}"
 EVM_CHAIN_ID="${EVM_CHAIN_ID:-7282}"
 DENOM="${DENOM:-SAVDR}"
 STATE_SYNC_RPC="${STATE_SYNC_RPC:-http://134.199.216.166:26660}"
-PERSISTENT_PEERS="${PERSISTENT_PEERS:-bc9decb51c24982322c756b7c9a0c837ed7a7216@134.199.216.166:26656,7883bda6e4de7db2b7056ead781a0a6383bd31c8@45.32.168.97:26656,a98ef2a79329ebdd7fee7d546ec284b64e7306fb@64.23.236.42:26656,e870477adf4f8b7a35c86d9910409482a573bfbb@149.28.244.23:26656}"
+PERSISTENT_PEERS="${PERSISTENT_PEERS:-bc9decb51c24982322c756b7c9a0c837ed7a7216@134.199.216.166:26656,7883bda6e4de7db2b7056ead781a0a6383bd31c8@45.32.168.97:26656,e870477adf4f8b7a35c86d9910409482a573bfbb@149.28.244.23:26656,eb33b07b52618fce53f755aac07337e8a8c91a2e@64.177.113.190:26656,f2d72c52432db11bdbe02e6c14726a06def0de2e@147.182.223.228:26656}"
 TRUST_OFFSET="${TRUST_OFFSET:-2000}"
 STATE_SYNC_DISCOVERY_TIME="${STATE_SYNC_DISCOVERY_TIME:-60s}"
 HOME_DIR="/home/evmos/.evmosd"
@@ -22,6 +22,9 @@ HOST_EVM_RPC_PORT="${HOST_EVM_RPC_PORT:-8545}"
 HOST_EVM_WS_PORT="${HOST_EVM_WS_PORT:-8546}"
 HOST_GRPC_PORT="${HOST_GRPC_PORT:-9090}"
 HOST_LOCAL_BIND="${HOST_LOCAL_BIND:-127.0.0.1}"
+LOG_MAX_SIZE="${LOG_MAX_SIZE:-100m}"
+LOG_MAX_FILE="${LOG_MAX_FILE:-5}"
+INSTALL_WATCHDOG="${INSTALL_WATCHDOG:-true}"
 MONIKER=""
 EXTERNAL_IP=""
 MNEMONIC=""
@@ -131,6 +134,7 @@ echo " Image:         $IMAGE"
 echo " Chain ID:      $CHAIN_ID"
 echo " Native denom:  $DENOM"
 echo " State sync:    $STATE_SYNC_RPC"
+echo " Log cap:       ${LOG_MAX_FILE} files x ${LOG_MAX_SIZE}"
 echo
 
 if ! docker pull "$IMAGE"; then
@@ -177,7 +181,7 @@ rm -f "$GENESIS_FILE"
 echo "Initializing node home..."
 docker exec "$SETUP_CONTAINER" sh -lc "
   rm -rf '$HOME_DIR/config' '$HOME_DIR/data'
-  evmosd init '$MONIKER' --chain-id '$CHAIN_ID' --home '$HOME_DIR' >/dev/null
+  evmosd init '$MONIKER' --chain-id '$CHAIN_ID' --home '$HOME_DIR' >/dev/null 2>&1
   cp /tmp/genesis.json '$HOME_DIR/config/genesis.json'
   evmosd config set client chain-id '$CHAIN_ID' --home '$HOME_DIR' >/dev/null 2>&1 || true
   evmosd config set client keyring-backend test --home '$HOME_DIR' >/dev/null 2>&1 || true
@@ -193,17 +197,30 @@ fi
 
 if [[ -n "$MNEMONIC" ]]; then
   echo "Importing validator key..."
-  printf '%s\n' "$MNEMONIC" | docker exec -i "$SETUP_CONTAINER" sh -lc "
+  MNEMONIC_TMP="$(mktemp)"
+  printf '%s\n' "$MNEMONIC" > "$MNEMONIC_TMP"
+  docker cp "$MNEMONIC_TMP" "$SETUP_CONTAINER:/tmp/validator.mnemonic"
+  rm -f "$MNEMONIC_TMP"
+  if ! docker exec "$SETUP_CONTAINER" sh -lc "
+    set -e
+    evmosd keys delete '$KEY_NAME' --yes --keyring-backend test --home '$HOME_DIR' >/dev/null 2>&1 || true
     evmosd keys add '$KEY_NAME' \
       --recover \
       --algo eth_secp256k1 \
       --keyring-backend test \
-      --home '$HOME_DIR' >/tmp/key.out
+      --home '$HOME_DIR' \
+      --source /tmp/validator.mnemonic >/tmp/key.out
+    rm -f /tmp/validator.mnemonic
     cat /tmp/key.out
-  "
+  "; then
+    docker exec "$SETUP_CONTAINER" rm -f /tmp/validator.mnemonic >/dev/null 2>&1 || true
+    echo "Failed to import validator mnemonic." >&2
+    exit 1
+  fi
 else
   echo "Creating new validator key. Save this mnemonic now; it will not be printed again."
   docker exec "$SETUP_CONTAINER" sh -lc "
+    evmosd keys delete '$KEY_NAME' --yes --keyring-backend test --home '$HOME_DIR' >/dev/null 2>&1 || true
     evmosd keys add '$KEY_NAME' \
       --algo eth_secp256k1 \
       --keyring-backend test \
@@ -250,6 +267,9 @@ docker run -d \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
   --platform "$DOCKER_PLATFORM" \
+  --log-driver json-file \
+  --log-opt "max-size=$LOG_MAX_SIZE" \
+  --log-opt "max-file=$LOG_MAX_FILE" \
   -v "$VOLUME_NAME:$HOME_DIR" \
   -p "$HOST_P2P_PORT:26656" \
   -p "$HOST_LOCAL_BIND:$HOST_RPC_PORT:26657" \
@@ -268,6 +288,48 @@ docker run -d \
     --json-rpc.ws-address 0.0.0.0:8546 \
     --grpc.enable \
     --grpc.address 0.0.0.0:9090 >/dev/null
+
+if [[ "$INSTALL_WATCHDOG" == "true" && -f "./scripts/watchdog.sh" ]]; then
+  echo "Installing validator watchdog..."
+  install -m 0755 ./scripts/watchdog.sh /usr/local/sbin/salvorias-validator-watchdog
+  cat > /etc/default/salvorias-validator-watchdog <<EOF
+CONTAINER_NAME=$CONTAINER_NAME
+MIN_PEERS=2
+STALE_AFTER_SECONDS=180
+CATCHING_UP_AFTER_SECONDS=600
+RESTART_COOLDOWN_SECONDS=300
+EOF
+  if command -v systemctl >/dev/null 2>&1; then
+    cat > /etc/systemd/system/salvorias-validator-watchdog.service <<'EOF'
+[Unit]
+Description=Salvorias validator watchdog
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/default/salvorias-validator-watchdog
+ExecStart=/usr/local/sbin/salvorias-validator-watchdog
+EOF
+    cat > /etc/systemd/system/salvorias-validator-watchdog.timer <<'EOF'
+[Unit]
+Description=Run Salvorias validator watchdog every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=10s
+Unit=salvorias-validator-watchdog.service
+
+[Install]
+WantedBy=timers.target
+EOF
+    systemctl daemon-reload
+    systemctl enable --now salvorias-validator-watchdog.timer >/dev/null
+  else
+    (crontab -l 2>/dev/null | grep -v '/usr/local/sbin/salvorias-validator-watchdog'; echo '* * * * * . /etc/default/salvorias-validator-watchdog 2>/dev/null; /usr/local/sbin/salvorias-validator-watchdog >/dev/null 2>&1') | crontab -
+  fi
+fi
 
 echo "Waiting for validator RPC..."
 for _ in $(seq 1 60); do

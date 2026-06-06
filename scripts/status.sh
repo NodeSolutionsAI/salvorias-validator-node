@@ -16,8 +16,16 @@ echo "Docker:"
 docker ps --filter "name=$CONTAINER_NAME" --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 echo
 
+echo "Docker logging:"
+docker inspect "$CONTAINER_NAME" --format 'LogDriver={{.HostConfig.LogConfig.Type}} LogOpts={{json .HostConfig.LogConfig.Config}}'
+echo
+
 echo "Sync:"
 docker exec "$CONTAINER_NAME" sh -lc "curl -s http://127.0.0.1:26657/status | jq '.result.sync_info'"
+echo
+
+echo "Peers:"
+docker exec "$CONTAINER_NAME" sh -lc "curl -s http://127.0.0.1:26657/net_info | jq '{n_peers: .result.n_peers, peers: [.result.peers[]? | {remote_ip, node_id: .node_info.id, moniker: .node_info.moniker}]}'"
 echo
 
 echo "Addresses:"

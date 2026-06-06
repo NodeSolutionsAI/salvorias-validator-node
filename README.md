@@ -7,6 +7,7 @@ It does three things:
 1. Pulls the Salvorias validator Docker image.
 2. Imports or creates the validator mnemonic/key.
 3. Configures state sync and starts the validator container.
+4. Installs Docker log rotation and a host watchdog for basic self-healing.
 
 No mnemonic is committed or stored in this repo.
 
@@ -41,6 +42,8 @@ During onboarding, paste the validator mnemonic when prompted. If you press ente
 
 After onboarding finishes, send the printed `Account`, `Valoper`, and `Consensus Pubkey` to the Salvorias operator team for funding and validator whitelist/governance.
 
+The container is started with Docker log rotation (`5 x 100 MB`) so block-by-block consensus logs cannot grow into multi-GB files. A watchdog runs every minute and restarts the container if RPC is unavailable, the height stalls, the node stays in `catching_up=true`, or peer count drops below the safe minimum.
+
 ## Check Sync
 
 ```bash
@@ -65,6 +68,10 @@ docker logs -f --tail 200 salvorias-validator
 
 This keeps the validator key in the Docker volume, clears only local chain data,
 and rewrites the current production state-sync peers.
+
+Do not run `reset-state-sync.sh` after the validator is active unless the
+Salvorias operator team explicitly tells you to. The watchdog only restarts the
+container; it does not wipe chain data or reset validator signing state.
 
 ## Activate Validator
 
@@ -97,6 +104,10 @@ The self-delegation amount is in base units. `1000000000000000000` equals
 - Docker volume: `salvorias-validator-data`
 - Image: `ghcr.io/nodesolutionsai/salvorias-validator-node:latest`
 - State sync RPC: `http://134.199.216.166:26660`
+- Persistent peers: production public peers only; stale private or jailed node
+  peers are intentionally excluded by default.
+- Docker log cap: `LOG_MAX_FILE=5`, `LOG_MAX_SIZE=100m`
+- Watchdog: enabled by default. Set `INSTALL_WATCHDOG=false` to skip it.
 
 ## Useful Commands
 
@@ -110,6 +121,19 @@ Show node sync state:
 
 ```bash
 docker exec salvorias-validator curl -s http://127.0.0.1:26657/status | jq '.result.sync_info'
+```
+
+Show peer count:
+
+```bash
+docker exec salvorias-validator curl -s http://127.0.0.1:26657/net_info | jq '.result.n_peers'
+```
+
+Check the watchdog:
+
+```bash
+systemctl status salvorias-validator-watchdog.timer
+tail -100 /var/log/salvorias-validator-watchdog.log
 ```
 
 Show validator addresses:
